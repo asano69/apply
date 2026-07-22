@@ -12,12 +12,6 @@ import (
 )
 
 func main() {
-	// No arguments at all: show usage instead of trying to read stdin.
-	if len(os.Args) == 1 {
-		printUsage()
-		return
-	}
-
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to read stdin:", err)
@@ -25,12 +19,14 @@ func main() {
 	}
 	diffText := strings.TrimSpace(string(data))
 
+	// The file argument is optional. If omitted, the diff itself must
+	// contain the filename on the line before the SEARCH block.
 	chatFiles := os.Args[1:]
 
 	var llmResponse string
 	if len(chatFiles) > 0 {
 		if len(chatFiles) != 1 {
-			fmt.Fprintln(os.Stderr, "Usage: apply <file>")
+			fmt.Fprintln(os.Stderr, "Usage: apply [file]")
 			fmt.Fprintln(os.Stderr, "Example:")
 			fmt.Fprintln(os.Stderr, "wl-paste | scripts-go/apply mathweb/flask/app.py")
 			os.Exit(2)
@@ -75,16 +71,6 @@ func printEditSummary(edit sr.EditBlock) {
 	}
 	removed := countLines(edit.Original)
 	fmt.Printf("Applied edit to %s (-%d/+%d lines)\n", edit.Path, removed, added)
-}
-
-func printUsage() {
-	fmt.Println("Usage: apply <file>")
-	fmt.Println()
-	fmt.Println("Reads an LLM's SEARCH/REPLACE diff from stdin and applies it to <file>.")
-	fmt.Println("If <file> is omitted, the diff itself must contain the filename.")
-	fmt.Println()
-	fmt.Println("Example:")
-	fmt.Println("  wl-paste | apply mathweb/flask/app.py")
 }
 
 func handleError(err error, chatFiles []string) {
