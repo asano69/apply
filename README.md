@@ -40,13 +40,6 @@ from flask import Flask
 >>>>>>> REPLACE
 ```
 
-### Python CLI alternative
-
-`scripts/apply` provides the same behavior via the `search-replace-py` package:
-
-```bash
-wl-paste | scripts/apply mathweb/flask/app.py
-```
 
 ## Testing
 
