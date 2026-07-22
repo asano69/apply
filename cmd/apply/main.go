@@ -12,6 +12,12 @@ import (
 )
 
 func main() {
+	// No arguments at all: show usage instead of trying to read stdin.
+	if len(os.Args) == 1 {
+		printUsage()
+		return
+	}
+
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to read stdin:", err)
@@ -44,6 +50,16 @@ func main() {
 	for _, edit := range result.UpdatedEdits {
 		fmt.Printf("Applied edit to %s\n", edit.Path)
 	}
+}
+
+func printUsage() {
+	fmt.Println("Usage: apply <file>")
+	fmt.Println()
+	fmt.Println("Reads an LLM's SEARCH/REPLACE diff from stdin and applies it to <file>.")
+	fmt.Println("If <file> is omitted, the diff itself must contain the filename.")
+	fmt.Println()
+	fmt.Println("Example:")
+	fmt.Println("  wl-paste | apply mathweb/flask/app.py")
 }
 
 func handleError(err error, chatFiles []string) {
