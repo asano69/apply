@@ -1,4 +1,4 @@
-# search-replace-go
+# apply (search-replace-go)
 
 A Go implementation of Aider's SEARCH/REPLACE ("editblock") diff format. It parses SEARCH/REPLACE blocks out of an LLM's response and applies them to files on disk, using the same matching strategies (exact match, whitespace-tolerant match, `...`-elided match, and fuzzy match) as the original [search-replace-py](https://github.com/marcius-llmus/search-replace-py) library.
 
