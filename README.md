@@ -25,7 +25,7 @@ make install   # go install ./cmd/apply
 Pipe an LLM's diff response into `apply`. If the diff doesn't already contain a filename, pass it as an argument:
 
 ```bash
-wl-paste | apply mathweb/flask/app.py
+wl-paste | apply
 ```
 
 A SEARCH/REPLACE block looks like:
