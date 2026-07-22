@@ -21,3 +21,4 @@ from flask import Flask
 ```
 
 
+- cache/は読み取り専用にしてください。変更不要です
