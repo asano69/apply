@@ -48,8 +48,33 @@ func main() {
 	}
 
 	for _, edit := range result.UpdatedEdits {
-		fmt.Printf("Applied edit to %s\n", edit.Path)
+		printEditSummary(edit)
 	}
+}
+
+// countLines returns the number of lines in s, treating a trailing newline
+// as ending the last line rather than starting an extra empty one.
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	n := strings.Count(s, "\n")
+	if !strings.HasSuffix(s, "\n") {
+		n++
+	}
+	return n
+}
+
+// printEditSummary logs what changed for a single applied edit: the file
+// path plus how many lines were removed and added.
+func printEditSummary(edit sr.EditBlock) {
+	added := countLines(edit.Updated)
+	if strings.TrimSpace(edit.Original) == "" {
+		fmt.Printf("Created %s (+%d lines)\n", edit.Path, added)
+		return
+	}
+	removed := countLines(edit.Original)
+	fmt.Printf("Applied edit to %s (-%d/+%d lines)\n", edit.Path, removed, added)
 }
 
 func printUsage() {
