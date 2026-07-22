@@ -1,9 +1,9 @@
-BINARY := cpgo
+BINARY := apply
 
 .PHONY: build install uninstall fmt vet test clean
 
 build:
-	go build -o $(BINARY) .
+	go build -o $(BINARY) ./cmd/apply
 
 install:
 	go install .
@@ -18,7 +18,7 @@ vet:
 	go vet ./...
 
 test: fmt vet
-	go build -o /dev/null .
+	go build -o /dev/null ./cmd/apply
 	go test ./...
 
 clean:
