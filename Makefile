@@ -6,7 +6,7 @@ build:
 	go build -o $(BINARY) ./cmd/apply
 
 install:
-	go install .
+	go install ./cmd/apply
 
 uninstall:
 	rm -f $(shell go env GOPATH)/bin/$(BINARY)
