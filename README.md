@@ -21,7 +21,7 @@ make install   # go install ./cmd/apply
 
 ## Usage
 
-Pipe an LLM's diff response into `apply`. If the diff doesn't already contain a filename, pass it as an argument:
+Pipe an LLM's diff response into `apply`. The diff must contain the filename on the line before each SEARCH block; `apply` takes no arguments other than `-h` / `--help` (running it without piped input also prints the help):
 
 ```bash
 wl-paste | apply

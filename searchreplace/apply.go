@@ -342,24 +342,9 @@ func resolvePath(root, path string) (string, error) {
 	return candidate, nil
 }
 
-func relativeTo(path, root string) string {
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return path
-	}
-	rel, err := filepath.Rel(rootAbs, path)
-	if err != nil {
-		return path
-	}
-	return rel
-}
-
 // ApplyOptions configures ApplyEdits / ApplyDiff.
 type ApplyOptions struct {
-	// ChatFiles are extra files that failed edits may be retried against,
-	// e.g. the single file scripts/apply was invoked with.
-	ChatFiles []string
-	Fence     Fence
+	Fence Fence
 	// DryRun validates that edits would apply without writing anything to disk.
 	DryRun bool
 }
@@ -369,15 +354,6 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 	fence := opts.Fence
 	if fence.Open == "" {
 		fence = DefaultFence
-	}
-
-	var fallbackFiles []string
-	for _, cf := range opts.ChatFiles {
-		resolved, err := resolvePath(root, cf)
-		if err != nil {
-			return ApplyResult{}, err
-		}
-		fallbackFiles = append(fallbackFiles, resolved)
 	}
 
 	var failed, passed, updatedEdits []EditBlock
@@ -404,27 +380,6 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 			newContent, applied = doReplace(fullPath, &s, original, updated, fence)
 		} else if strings.TrimSpace(original) == "" {
 			newContent, applied = doReplace(fullPath, nil, original, updated, fence)
-		}
-
-		// If that failed and this isn't a "create new file" edit, try any
-		// other files that were added to the chat.
-		// https://github.com/Aider-AI/aider/issues/2258
-		if !applied && strings.TrimSpace(original) != "" {
-			for _, candidate := range fallbackFiles {
-				data, rerr := os.ReadFile(candidate)
-				if rerr != nil {
-					continue
-				}
-				s := string(data)
-				content, ok := doReplace(candidate, &s, original, updated, fence)
-				if ok {
-					newContent = content
-					applied = true
-					path = relativeTo(candidate, root)
-					fullPath = candidate
-					break
-				}
-			}
 		}
 
 		updatedEdits = append(updatedEdits, EditBlock{Path: path, Original: original, Updated: updated})

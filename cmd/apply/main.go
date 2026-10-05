@@ -11,35 +11,49 @@ import (
 	sr "search-replace-go/searchreplace"
 )
 
+const helpText = `apply - apply SEARCH/REPLACE blocks from stdin to files under the current directory.
+
+Usage:
+  wl-paste | apply
+  apply -h | --help
+
+Each SEARCH block must be preceded by the filename it applies to,
+alone on its own line. apply takes no other arguments.
+`
+
+// stdinIsTerminal reports whether stdin is an interactive terminal,
+// i.e. nothing has been piped into apply.
+func stdinIsTerminal() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
 func main() {
+	// The diff is read from stdin only. Each SEARCH block must be preceded
+	// by the filename it applies to.
+	if len(os.Args) > 1 {
+		if arg := os.Args[1]; len(os.Args) == 2 && (arg == "-h" || arg == "--help") {
+			fmt.Print(helpText)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Unexpected arguments: %s\n\n%s", strings.Join(os.Args[1:], " "), helpText)
+		os.Exit(2)
+	}
+
+	if stdinIsTerminal() {
+		fmt.Print(helpText)
+		return
+	}
+
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to read stdin:", err)
 		os.Exit(1)
 	}
-	diffText := strings.TrimSpace(string(data))
 
-	// The file argument is optional. If omitted, the diff itself must
-	// contain the filename on the line before the SEARCH block.
-	chatFiles := os.Args[1:]
-
-	var llmResponse string
-	if len(chatFiles) > 0 {
-		if len(chatFiles) != 1 {
-			fmt.Fprintln(os.Stderr, "Usage: apply [file]")
-			fmt.Fprintln(os.Stderr, "Example:")
-			fmt.Fprintln(os.Stderr, "wl-paste | scripts-go/apply mathweb/flask/app.py")
-			os.Exit(2)
-		}
-		path := chatFiles[0]
-		llmResponse = path + "\n```\n" + diffText + "\n```\n"
-	} else {
-		llmResponse = diffText
-	}
-
-	result, err := sr.ApplyDiff(llmResponse, ".", sr.ApplyOptions{ChatFiles: chatFiles})
+	result, err := sr.ApplyDiff(strings.TrimSpace(string(data)), ".", sr.ApplyOptions{})
 	if err != nil {
-		handleError(err, chatFiles)
+		handleError(err)
 		os.Exit(1)
 	}
 
@@ -73,7 +87,7 @@ func printEditSummary(edit sr.EditBlock) {
 	fmt.Printf("Applied edit to %s (-%d/+%d lines)\n", edit.Path, removed, added)
 }
 
-func handleError(err error, chatFiles []string) {
+func handleError(err error) {
 	if parseErr, ok := err.(*sr.ParseError); ok {
 		fmt.Fprintln(os.Stderr, "\nFailed to parse SEARCH/REPLACE block.")
 		fmt.Fprintln(os.Stderr, "\nExpected input:")
@@ -82,10 +96,7 @@ func handleError(err error, chatFiles []string) {
 		fmt.Fprintln(os.Stderr, "=======")
 		fmt.Fprintln(os.Stderr, "new text")
 		fmt.Fprintln(os.Stderr, ">>>>>>> REPLACE")
-
-		if len(chatFiles) == 0 {
-			fmt.Fprintln(os.Stderr, "When no filename argument is supplied, the input must also contain a filename.")
-		}
+		fmt.Fprintln(os.Stderr, "\nThe filename must be alone on the line before each SEARCH block.")
 
 		fmt.Fprintf(os.Stderr, "\nOriginal error: %s\n", parseErr.Error())
 		return
