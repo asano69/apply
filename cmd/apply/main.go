@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -51,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	result, err := sr.ApplyDiff(strings.TrimSpace(string(data)), ".", sr.ApplyOptions{})
+	result, err := sr.ApplyDiff(strings.TrimSpace(string(data)), ".", sr.ApplyOptions{ConfirmMkdir: confirmMkdir})
 	if err != nil {
 		handleError(err)
 		os.Exit(1)
@@ -85,6 +86,22 @@ func printEditSummary(edit sr.EditBlock) {
 	}
 	removed := countLines(edit.Original)
 	fmt.Printf("Applied edit to %s (-%d/+%d lines)\n", edit.Path, removed, added)
+}
+
+// confirmMkdir asks on the terminal whether dir may be created. Stdin is
+// already used for the diff, so the answer is read from /dev/tty; if there is
+// no terminal the answer is "no".
+func confirmMkdir(dir string) bool {
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return false
+	}
+	defer tty.Close()
+
+	fmt.Fprintf(os.Stderr, "Directory '%s' does not exist. Create it? [y/N] ", dir)
+	answer, _ := bufio.NewReader(tty).ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes"
 }
 
 func handleError(err error) {

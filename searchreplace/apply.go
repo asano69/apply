@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -339,6 +340,39 @@ func checkNewFiles(edits []EditBlock, root string) error {
 	return nil
 }
 
+// ensureParentDirs makes sure the parent directory of every new-file edit
+// exists. Each missing directory is confirmed with confirm before anything is
+// created, so declining leaves the disk untouched.
+func ensureParentDirs(edits []EditBlock, root string, confirm func(dir string) bool) error {
+	var missing []string
+	for _, edit := range edits {
+		if strings.TrimSpace(edit.Original) != "" {
+			continue
+		}
+		fullPath, err := resolvePath(root, edit.Path)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Dir(fullPath)
+		if !fileExists(dir) && !slices.Contains(missing, dir) {
+			missing = append(missing, dir)
+		}
+	}
+
+	for _, dir := range missing {
+		if confirm == nil || !confirm(dir) {
+			return &DirMissingError{Dir: dir}
+		}
+	}
+
+	for _, dir := range missing {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func resolvePath(root, path string) (string, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
@@ -366,6 +400,9 @@ type ApplyOptions struct {
 	Fence Fence
 	// DryRun validates that edits would apply without writing anything to disk.
 	DryRun bool
+	// ConfirmMkdir is asked before creating a missing parent directory for a
+	// new file. If nil, missing directories are never created.
+	ConfirmMkdir func(dir string) bool
 }
 
 // ApplyEdits applies a set of already-parsed edits to files under root.
@@ -377,6 +414,11 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 
 	if err := checkNewFiles(edits, root); err != nil {
 		return ApplyResult{}, err
+	}
+	if !opts.DryRun {
+		if err := ensureParentDirs(edits, root, opts.ConfirmMkdir); err != nil {
+			return ApplyResult{}, err
+		}
 	}
 
 	var failed, passed, updatedEdits []EditBlock

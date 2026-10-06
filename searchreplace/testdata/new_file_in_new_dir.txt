@@ -1,0 +1,9 @@
+internal/parser/links_test.go (new file)
+```go
+package parser
+
+import (
+	"slices"
+	"testing"
+)
+```

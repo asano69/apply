@@ -31,6 +31,19 @@ func (e *FileExistsError) Error() string {
 		e.Path)
 }
 
+// DirMissingError indicates a new-file block targets a directory that does
+// not exist and the user did not agree to create it.
+type DirMissingError struct {
+	Dir string
+}
+
+func (e *DirMissingError) Error() string {
+	return fmt.Sprintf(
+		"Directory '%s' does not exist and was not created, so no files were changed. "+
+			"Create the directory first, or agree to create it when asked.",
+		e.Dir)
+}
+
 // ApplyError indicates one or more SEARCH/REPLACE blocks failed to match.
 type ApplyError struct {
 	Message      string
