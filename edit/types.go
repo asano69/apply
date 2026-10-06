@@ -1,4 +1,4 @@
-package searchreplace
+package edit
 
 // Fence is the pair of markers used to wrap a fenced code block, e.g. ``` / ```.
 type Fence struct {

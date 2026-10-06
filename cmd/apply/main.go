@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	sr "search-replace-go/searchreplace"
+	"search-replace-go/edit"
 )
 
 const helpText = `apply - apply SEARCH/REPLACE blocks from stdin to files under the current directory.
@@ -52,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	result, err := sr.ApplyDiff(strings.TrimSpace(string(data)), ".", sr.ApplyOptions{ConfirmMkdir: confirmMkdir})
+	result, err := edit.ApplyDiff(strings.TrimSpace(string(data)), ".", edit.ApplyOptions{ConfirmMkdir: confirmMkdir})
 	if err != nil {
 		handleError(err)
 		os.Exit(1)
@@ -78,7 +78,7 @@ func countLines(s string) int {
 
 // printEditSummary logs what changed for a single applied edit: the file
 // path plus how many lines were removed and added.
-func printEditSummary(edit sr.EditBlock) {
+func printEditSummary(edit edit.EditBlock) {
 	added := countLines(edit.Updated)
 	if strings.TrimSpace(edit.Original) == "" {
 		fmt.Printf("Created %s (+%d lines)\n", edit.Path, added)
@@ -105,7 +105,7 @@ func confirmMkdir(dir string) bool {
 }
 
 func handleError(err error) {
-	if parseErr, ok := err.(*sr.ParseError); ok {
+	if parseErr, ok := err.(*edit.ParseError); ok {
 		fmt.Fprintln(os.Stderr, "\nFailed to parse SEARCH/REPLACE block.")
 		fmt.Fprintln(os.Stderr, "\nExpected input:")
 		fmt.Fprintln(os.Stderr, "<<<<<<< SEARCH")
@@ -119,7 +119,7 @@ func handleError(err error) {
 		return
 	}
 
-	if existsErr, ok := err.(*sr.FileExistsError); ok {
+	if existsErr, ok := err.(*edit.FileExistsError); ok {
 		fmt.Fprintf(os.Stderr, "\n%s\n", existsErr.Error())
 		return
 	}

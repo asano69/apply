@@ -4,12 +4,12 @@ A Go implementation of Aider's SEARCH/REPLACE ("editblock") diff format. It pars
 
 ## Repository layout
 
-- `searchreplace/` — the core Go package.
+- `edit/` — the core Go package.
   - `parser.go` — finds and parses `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` blocks, including filename discovery.
   - `apply.go` — applies parsed edits to files, with exact, whitespace-tolerant, and `...`-elided matching.
   - `fuzzy.go` — last-resort fuzzy matching and "did you mean" suggestions for failed matches.
   - `types.go` / `errors.go` — shared types and error types (`ParseError`, `PathEscapeError`, `ApplyError`).
-- `cmd/apply/` — CLI entrypoint (`apply`) built on top of `searchreplace`.
+- `cmd/apply/` — CLI entrypoint (`apply`) built on top of `edit`.
 - `cache/` — a vendored copy of the upstream `search-replace-py` Python source, kept as the reference implementation this Go package was ported from.
 
 ## Build & install

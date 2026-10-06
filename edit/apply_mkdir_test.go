@@ -1,4 +1,4 @@
-package searchreplace
+package edit
 
 import (
 	"os"
