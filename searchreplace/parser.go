@@ -3,6 +3,7 @@ package searchreplace
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -11,6 +12,12 @@ var (
 	dividerPattern  = regexp.MustCompile(`^={5,9}\s*$`)
 	updatedPattern  = regexp.MustCompile(`^>{5,9} REPLACE\s*$`)
 	tripleBackticks = "```"
+
+	// pathNotes are trailing annotations that LLMs append to a path line,
+	// e.g. "(new file)". Add a pattern here to support a new notation.
+	pathNotes = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\s*[(（](new file|new|新規ファイル|新規)[)）]\s*$`),
+	}
 )
 
 const (
@@ -37,137 +44,157 @@ func splitLinesKeepEnds(s string) []string {
 	return lines
 }
 
-// stripFilename cleans up a candidate filename line, stripping fences,
-// leading "#", trailing ":", and surrounding backticks/asterisks.
-func stripFilename(filename string, fence Fence) string {
-	filename = strings.TrimSpace(filename)
-	if filename == "..." {
-		return ""
-	}
+// lineKind is the role a single line plays in an LLM response.
+type lineKind int
 
-	if fence.Open != "" && strings.HasPrefix(filename, fence.Open) {
-		candidate := filename[len(fence.Open):]
-		if candidate != "" && (strings.Contains(candidate, ".") || strings.Contains(candidate, "/")) {
-			return candidate
-		}
-		return ""
-	}
+const (
+	kindText    lineKind = iota // prose, a path line, or code content
+	kindFence                   // opening or closing code fence
+	kindSearch                  // "<<<<<<< SEARCH"
+	kindDivider                 // "======="
+	kindReplace                 // ">>>>>>> REPLACE"
+)
 
-	if strings.HasPrefix(filename, tripleBackticks) {
-		candidate := filename[len(tripleBackticks):]
-		if candidate != "" && (strings.Contains(candidate, ".") || strings.Contains(candidate, "/")) {
-			return candidate
-		}
-		return ""
+// classify decides what kind of line this is.
+func classify(line string, fence Fence) lineKind {
+	t := strings.TrimSpace(line)
+	switch {
+	case headPattern.MatchString(t):
+		return kindSearch
+	case dividerPattern.MatchString(t):
+		return kindDivider
+	case updatedPattern.MatchString(t):
+		return kindReplace
+	case strings.HasPrefix(t, fence.Open) || strings.HasPrefix(t, tripleBackticks):
+		return kindFence
 	}
-
-	filename = strings.TrimSuffix(filename, ":")
-	filename = strings.TrimPrefix(filename, "#")
-	filename = strings.TrimSpace(filename)
-	filename = strings.Trim(filename, "`")
-	filename = strings.Trim(filename, "*")
-	return filename
+	return kindText
 }
 
-// findFilename inspects up to the 3 lines preceding a SEARCH block to
-// discover the file path the block applies to.
-//
-// Note: unlike search_replace-py's find_original_update_blocks, this never
-// receives a list of "valid" chat filenames to fuzzy-match against, because
-// apply_diff (the only entry point scripts/apply uses) never supplies one.
-// That fuzzy-matching branch is therefore omitted here for simplicity.
-func findFilename(precedingLines []string, fence Fence) string {
-	start := 0
-	if len(precedingLines) > 3 {
-		start = len(precedingLines) - 3
+// parsePath returns the file path on a line after removing notes such as
+// "(new file)", markdown decoration and a trailing ":". It returns "" if the
+// line does not look like a bare path (no spaces, contains "." or "/").
+func parsePath(line string) string {
+	// Strip the trailing ":" first: pathNotes are anchored to the end of the line.
+	s := strings.TrimSuffix(strings.TrimSpace(line), ":")
+	for _, re := range pathNotes {
+		s = re.ReplaceAllString(s, "")
 	}
+	s = strings.TrimSpace(strings.TrimLeft(s, "#"))
+	s = strings.Trim(s, "`*")
 
-	var filenames []string
-	for i := len(precedingLines) - 1; i >= start; i-- {
-		line := precedingLines[i]
-		if fname := stripFilename(line, fence); fname != "" {
-			filenames = append(filenames, fname)
-		}
-		// Only keep looking further back as long as we keep seeing fences.
-		if !strings.HasPrefix(line, fence.Open) && !strings.HasPrefix(line, tripleBackticks) {
-			break
-		}
-	}
-
-	if len(filenames) == 0 {
+	if s == "" || strings.ContainsAny(s, " \t") || !strings.ContainsAny(s, "./") {
 		return ""
 	}
-
-	// Prefer a candidate that looks like it has a file extension.
-	for _, f := range filenames {
-		if strings.Contains(f, ".") {
-			return f
-		}
-	}
-
-	return filenames[0]
+	return s
 }
 
-// findOriginalUpdateBlocks scans content for SEARCH/REPLACE blocks.
+// blockParser walks the lines of a response and collects edit blocks.
+type blockParser struct {
+	lines []string
+	pos   int
+	fence Fence
+	edits []EditBlock
+
+	// candidate is the path on the line just before the current position.
+	candidate string
+	// current is the path of the last edit; blocks without their own path reuse it.
+	current string
+}
+
+// findOriginalUpdateBlocks scans content for SEARCH/REPLACE blocks and
+// new-file code blocks.
 func findOriginalUpdateBlocks(content string, fence Fence) ([]EditBlock, error) {
-	lines := splitLinesKeepEnds(content)
+	p := &blockParser{lines: splitLinesKeepEnds(content), fence: fence}
 
-	var edits []EditBlock
-	var currentFilename string
+	for p.pos < len(p.lines) {
+		line := p.lines[p.pos]
+		p.pos++
 
-	i := 0
-	for i < len(lines) {
-		trimmed := strings.TrimSpace(lines[i])
-
-		if headPattern.MatchString(trimmed) {
-			windowStart := i - 3
-			if windowStart < 0 {
-				windowStart = 0
+		switch classify(line, fence) {
+		case kindSearch:
+			if err := p.readBlock(); err != nil {
+				return nil, err
 			}
-			filename := findFilename(lines[windowStart:i], fence)
-
-			if filename == "" {
-				if currentFilename != "" {
-					filename = currentFilename
-				} else {
-					return nil, &ParseError{Msg: fmt.Sprintf(missingFile, fence.Open)}
-				}
-			}
-			currentFilename = filename
-
-			var original, updated []string
-
-			i++
-			for i < len(lines) && !dividerPattern.MatchString(strings.TrimSpace(lines[i])) {
-				original = append(original, lines[i])
-				i++
-			}
-			if i >= len(lines) {
-				return nil, &ParseError{Msg: fmt.Sprintf("%s\n^^^ Expected `%s`", strings.Join(lines[:i], ""), dividerErr)}
-			}
-
-			i++
-			for i < len(lines) &&
-				!updatedPattern.MatchString(strings.TrimSpace(lines[i])) &&
-				!dividerPattern.MatchString(strings.TrimSpace(lines[i])) {
-				updated = append(updated, lines[i])
-				i++
-			}
-			if i >= len(lines) {
-				return nil, &ParseError{Msg: fmt.Sprintf("%s\n^^^ Expected `%s` or `%s`", strings.Join(lines[:i], ""), updatedErr, dividerErr)}
-			}
-
-			edits = append(edits, EditBlock{
-				Path:     filename,
-				Original: strings.Join(original, ""),
-				Updated:  strings.Join(updated, ""),
-			})
+		case kindFence:
+			p.readNewFile()
+		case kindText:
+			// Blank and prose lines reset the candidate, so a path only counts
+			// when it sits directly before a block or a fence.
+			p.candidate = parsePath(line)
 		}
-
-		i++
 	}
 
-	return edits, nil
+	return p.edits, nil
+}
+
+// readBlock reads a SEARCH/REPLACE block; the SEARCH line is already consumed.
+func (p *blockParser) readBlock() error {
+	path := p.candidate
+	if path == "" {
+		path = p.current
+	}
+	if path == "" {
+		return &ParseError{Msg: fmt.Sprintf(missingFile, p.fence.Open)}
+	}
+
+	original, ok := p.readUntil(kindDivider)
+	if !ok {
+		return p.unexpectedEnd(fmt.Sprintf("`%s`", dividerErr))
+	}
+
+	updated, ok := p.readUntil(kindReplace, kindDivider)
+	if !ok {
+		return p.unexpectedEnd(fmt.Sprintf("`%s` or `%s`", updatedErr, dividerErr))
+	}
+
+	p.addEdit(path, original, updated)
+	return nil
+}
+
+// readNewFile handles an opening fence directly after a path line. If the
+// fence holds a SEARCH block it is left to the main loop; otherwise the whole
+// fenced body is the content of a new file. The fence line is already consumed.
+func (p *blockParser) readNewFile() {
+	if p.candidate == "" || p.nextKind() == kindSearch {
+		return
+	}
+
+	body, _ := p.readUntil(kindFence)
+	p.addEdit(p.candidate, "", body)
+}
+
+// nextKind returns the kind of the next unread line.
+func (p *blockParser) nextKind() lineKind {
+	if p.pos >= len(p.lines) {
+		return kindText
+	}
+	return classify(p.lines[p.pos], p.fence)
+}
+
+// readUntil collects lines up to the first line whose kind is in stop and
+// consumes that line. It reports false if the input ends first.
+func (p *blockParser) readUntil(stop ...lineKind) (string, bool) {
+	var buf []string
+	for p.pos < len(p.lines) {
+		line := p.lines[p.pos]
+		p.pos++
+		if slices.Contains(stop, classify(line, p.fence)) {
+			return strings.Join(buf, ""), true
+		}
+		buf = append(buf, line)
+	}
+	return strings.Join(buf, ""), false
+}
+
+func (p *blockParser) addEdit(path, original, updated string) {
+	p.edits = append(p.edits, EditBlock{Path: path, Original: original, Updated: updated})
+	p.current = path
+	p.candidate = ""
+}
+
+func (p *blockParser) unexpectedEnd(expected string) error {
+	return &ParseError{Msg: fmt.Sprintf("%s\n^^^ Expected %s", strings.Join(p.lines, ""), expected)}
 }
 
 // ParseEditBlocks parses all SEARCH/REPLACE blocks out of content.

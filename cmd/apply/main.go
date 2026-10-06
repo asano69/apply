@@ -102,5 +102,10 @@ func handleError(err error) {
 		return
 	}
 
+	if existsErr, ok := err.(*sr.FileExistsError); ok {
+		fmt.Fprintf(os.Stderr, "\n%s\n", existsErr.Error())
+		return
+	}
+
 	fmt.Fprintf(os.Stderr, "Failed to apply diff: %s\n", err.Error())
 }

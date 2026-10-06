@@ -5,7 +5,7 @@ BINARY := apply
 build:
 	go build -o $(BINARY) ./cmd/apply
 
-install:
+install: test build
 	go install ./cmd/apply
 
 uninstall:

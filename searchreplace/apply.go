@@ -320,6 +320,25 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+// checkNewFiles rejects new-file edits (empty Original) whose target already
+// exists, so nothing is written when a response would overwrite or append to
+// an existing file.
+func checkNewFiles(edits []EditBlock, root string) error {
+	for _, edit := range edits {
+		if strings.TrimSpace(edit.Original) != "" {
+			continue
+		}
+		fullPath, err := resolvePath(root, edit.Path)
+		if err != nil {
+			return err
+		}
+		if fileExists(fullPath) {
+			return &FileExistsError{Path: edit.Path}
+		}
+	}
+	return nil
+}
+
 func resolvePath(root, path string) (string, error) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
@@ -354,6 +373,10 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 	fence := opts.Fence
 	if fence.Open == "" {
 		fence = DefaultFence
+	}
+
+	if err := checkNewFiles(edits, root); err != nil {
+		return ApplyResult{}, err
 	}
 
 	var failed, passed, updatedEdits []EditBlock
