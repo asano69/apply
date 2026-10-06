@@ -52,7 +52,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	result, err := edit.ApplyDiff(strings.TrimSpace(string(data)), ".", edit.ApplyOptions{ConfirmMkdir: confirmMkdir})
+	opts := edit.ApplyOptions{ConfirmMkdir: confirmMkdir, ConfirmFuzzy: confirmFuzzy}
+	result, err := edit.ApplyDiff(strings.TrimSpace(string(data)), ".", opts)
 	if err != nil {
 		handleError(err)
 		os.Exit(1)
@@ -88,17 +89,29 @@ func printEditSummary(edit edit.EditBlock) {
 	fmt.Printf("Applied edit to %s (-%d/+%d lines)\n", edit.Path, removed, added)
 }
 
-// confirmMkdir asks on the terminal whether dir may be created. Stdin is
-// already used for the diff, so the answer is read from /dev/tty; if there is
-// no terminal the answer is "no".
+// confirmMkdir asks on the terminal whether dir may be created.
 func confirmMkdir(dir string) bool {
+	return askYesNo(fmt.Sprintf("Directory '%s' does not exist. Create it? [y/N] ", dir))
+}
+
+// confirmFuzzy shows the closest lines found for a SEARCH block that did not
+// match exactly and asks whether to apply the edit there.
+func confirmFuzzy(path, searched, found string) bool {
+	fmt.Fprintf(os.Stderr, "\nSEARCH block did not match exactly in %s.\n\nSEARCH:\n%s\nDid you mean these lines?\n%s\n", path, searched, found)
+	return askYesNo("Apply the edit here? [y/N] ")
+}
+
+// askYesNo prints prompt and reports whether the user answered y or yes.
+// Stdin is already used for the diff, so the answer is read from /dev/tty;
+// if there is no terminal the answer is "no".
+func askYesNo(prompt string) bool {
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
 		return false
 	}
 	defer tty.Close()
 
-	fmt.Fprintf(os.Stderr, "Directory '%s' does not exist. Create it? [y/N] ", dir)
+	fmt.Fprint(os.Stderr, prompt)
 	answer, _ := bufio.NewReader(tty).ReadString('\n')
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	return answer == "y" || answer == "yes"

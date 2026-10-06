@@ -66,10 +66,10 @@ func lcsLenStrings(a, b []string) int {
 	return prev[m]
 }
 
-// replaceClosestEditDistance is the last-resort fuzzy replacement strategy:
-// it searches whole_lines for the chunk most similar to part (within +/-10%
-// of part's line count) and swaps it for replace_lines if similar enough.
-func replaceClosestEditDistance(wholeLines []string, part string, partLines []string, replaceLines []string) string {
+// findClosestChunk is the last-resort fuzzy strategy: it searches wholeLines
+// for the chunk most similar to part (within +/-10% of part's line count) and
+// returns its line range [start, end). ok is false if nothing is similar enough.
+func findClosestChunk(wholeLines []string, part string, partLines []string) (start, end int, ok bool) {
 	const similarityThresh = 0.8
 
 	maxSimilarity := 0.0
@@ -116,13 +116,9 @@ func replaceClosestEditDistance(wholeLines []string, part string, partLines []st
 	}
 
 	if maxSimilarity < similarityThresh {
-		return ""
+		return 0, 0, false
 	}
-
-	result := append([]string{}, wholeLines[:chunkStart]...)
-	result = append(result, replaceLines...)
-	result = append(result, wholeLines[chunkEnd:]...)
-	return strings.Join(result, "")
+	return chunkStart, chunkEnd, true
 }
 
 // findSimilarLines looks for the region of contentText most similar to

@@ -231,8 +231,10 @@ func tryDotDotDots(whole, part, replace string) (string, bool, error) {
 
 // replaceMostSimilarChunk finds `part` inside `whole` (via exact,
 // whitespace-tolerant, "..." elided, or fuzzy matching, in that order) and
-// replaces it with `replace`. Returns ok=false if nothing matched well enough.
-func replaceMostSimilarChunk(whole, part, replace string) (string, bool) {
+// replaces it with `replace`. A fuzzy match is applied only if confirm is
+// non-nil and returns true for the matched text. Returns ok=false if nothing
+// was applied.
+func replaceMostSimilarChunk(whole, part, replace string, confirm func(found string) bool) (string, bool) {
 	whole, wholeLines := prep(whole)
 	part, partLines := prep(part)
 	_, replaceLines := prep(replace)
@@ -253,12 +255,19 @@ func replaceMostSimilarChunk(whole, part, replace string) (string, bool) {
 		return result, true
 	}
 
-	// Last resort: fuzzy matching.
-	if result := replaceClosestEditDistance(wholeLines, part, partLines, replaceLines); result != "" {
-		return result, true
+	// Last resort: propose the closest chunk and apply it only if confirmed.
+	if confirm == nil {
+		return "", false
+	}
+	start, end, ok := findClosestChunk(wholeLines, part, partLines)
+	if !ok || !confirm(strings.Join(wholeLines[start:end], "")) {
+		return "", false
 	}
 
-	return "", false
+	result := append([]string{}, wholeLines[:start]...)
+	result = append(result, replaceLines...)
+	result = append(result, wholeLines[end:]...)
+	return strings.Join(result, ""), true
 }
 
 // stripQuotedWrapping removes an LLM's extraneous filename line and/or
@@ -290,7 +299,7 @@ func stripQuotedWrapping(text, path string, fence Fence) string {
 // doReplace applies one edit against a file's content. hasContent
 // distinguishes "file doesn't exist and we're not creating it" (ok=false,
 // no newContent) from every other outcome.
-func doReplace(path string, content *string, beforeText, afterText string, fence Fence) (newContent string, ok bool) {
+func doReplace(path string, content *string, beforeText, afterText string, fence Fence, confirm func(found string) bool) (newContent string, ok bool) {
 	beforeText = stripQuotedWrapping(beforeText, path, fence)
 	afterText = stripQuotedWrapping(afterText, path, fence)
 
@@ -313,7 +322,7 @@ func doReplace(path string, content *string, beforeText, afterText string, fence
 		return *content + afterText, true
 	}
 
-	return replaceMostSimilarChunk(*content, beforeText, afterText)
+	return replaceMostSimilarChunk(*content, beforeText, afterText, confirm)
 }
 
 func fileExists(path string) bool {
@@ -403,6 +412,9 @@ type ApplyOptions struct {
 	// ConfirmMkdir is asked before creating a missing parent directory for a
 	// new file. If nil, missing directories are never created.
 	ConfirmMkdir func(dir string) bool
+	// ConfirmFuzzy is asked before applying an edit whose SEARCH text only
+	// approximately matches the file. If nil, approximate matches are never applied.
+	ConfirmFuzzy func(path, searched, found string) bool
 }
 
 // ApplyEdits applies a set of already-parsed edits to files under root.
@@ -433,6 +445,11 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 			return ApplyResult{}, err
 		}
 
+		var confirm func(found string) bool
+		if opts.ConfirmFuzzy != nil {
+			confirm = func(found string) bool { return opts.ConfirmFuzzy(path, original, found) }
+		}
+
 		var newContent string
 		var applied bool
 
@@ -442,9 +459,9 @@ func ApplyEdits(edits []EditBlock, root string, opts ApplyOptions) (ApplyResult,
 				return ApplyResult{}, rerr
 			}
 			s := string(data)
-			newContent, applied = doReplace(fullPath, &s, original, updated, fence)
+			newContent, applied = doReplace(fullPath, &s, original, updated, fence, confirm)
 		} else if strings.TrimSpace(original) == "" {
-			newContent, applied = doReplace(fullPath, nil, original, updated, fence)
+			newContent, applied = doReplace(fullPath, nil, original, updated, fence, nil)
 		}
 
 		updatedEdits = append(updatedEdits, EditBlock{Path: path, Original: original, Updated: updated})
