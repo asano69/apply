@@ -55,6 +55,33 @@ const (
 	kindReplace                 // ">>>>>>> REPLACE"
 )
 
+// dropBlankLinesBeforeSearch removes blank lines that sit between a path line
+// and the SEARCH line that follows it, so the path still counts as the
+// candidate for that block. Blank lines in any other position are kept.
+func dropBlankLinesBeforeSearch(lines []string, fence Fence) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if classify(line, fence) == kindSearch {
+			out = dropPathGap(out)
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// dropPathGap trims trailing blank lines from lines, but only when the last
+// non-blank line is a path.
+func dropPathGap(lines []string) []string {
+	end := len(lines)
+	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	if end == 0 || end == len(lines) || parsePath(lines[end-1]) == "" {
+		return lines
+	}
+	return lines[:end]
+}
+
 // classify decides what kind of line this is.
 func classify(line string, fence Fence) lineKind {
 	t := strings.TrimSpace(line)
@@ -105,7 +132,8 @@ type blockParser struct {
 // findOriginalUpdateBlocks scans content for SEARCH/REPLACE blocks and
 // new-file code blocks.
 func findOriginalUpdateBlocks(content string, fence Fence) ([]EditBlock, error) {
-	p := &blockParser{lines: splitLinesKeepEnds(content), fence: fence}
+	lines := dropBlankLinesBeforeSearch(splitLinesKeepEnds(content), fence)
+	p := &blockParser{lines: lines, fence: fence}
 
 	for p.pos < len(p.lines) {
 		line := p.lines[p.pos]

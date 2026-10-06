@@ -66,6 +66,19 @@ func TestParseEditBlocks_Formats(t *testing.T) {
 			want:  []EditBlock{{Path: "a.go", Original: "old\n", Updated: "new\n"}},
 		},
 		{
+			name:  "blank lines between path and SEARCH",
+			input: "a.go\n\n\n<SEARCH>\nold\n<DIV>\nnew\n<REPLACE>\n",
+			want:  []EditBlock{{Path: "a.go", Original: "old\n", Updated: "new\n"}},
+		},
+		{
+			name:  "blank line between a prose line and SEARCH reuses the previous path",
+			input: "a.go\n<SEARCH>\nold1\n<DIV>\nnew1\n<REPLACE>\nSome text\n\n<SEARCH>\nold2\n<DIV>\nnew2\n<REPLACE>\n",
+			want: []EditBlock{
+				{Path: "a.go", Original: "old1\n", Updated: "new1\n"},
+				{Path: "a.go", Original: "old2\n", Updated: "new2\n"},
+			},
+		},
+		{
 			name: "several blocks under one path",
 			input: "a.go\n" +
 				"<SEARCH>\nold1\n<DIV>\nnew1\n<REPLACE>\n\n" +
