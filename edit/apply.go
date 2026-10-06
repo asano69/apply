@@ -229,8 +229,21 @@ func tryDotDotDots(whole, part, replace string) (string, bool, error) {
 	return result, true, nil
 }
 
+// replaceUniqueSubstring is the fallback for a SEARCH text that does not start
+// at the beginning of a line. It replaces part anywhere in whole, but only if
+// it occurs exactly once, so the target is never ambiguous. The trailing
+// newline that prep and stripQuotedWrapping add is ignored on both sides, so
+// the text after the match on the same line is preserved.
+func replaceUniqueSubstring(whole, part, replace string) (string, bool) {
+	needle := strings.TrimSuffix(part, "\n")
+	if strings.TrimSpace(needle) == "" || strings.Count(whole, needle) != 1 {
+		return "", false
+	}
+	return strings.Replace(whole, needle, strings.TrimSuffix(replace, "\n"), 1), true
+}
+
 // replaceMostSimilarChunk finds `part` inside `whole` (via exact,
-// whitespace-tolerant, "..." elided, or fuzzy matching, in that order) and
+// whitespace-tolerant, "..." elided, unique-substring, or fuzzy matching, in that order) and
 // replaces it with `replace`. A fuzzy match is applied only if confirm is
 // non-nil and returns true for the matched text. Returns ok=false if nothing
 // was applied.
@@ -252,6 +265,11 @@ func replaceMostSimilarChunk(whole, part, replace string, confirm func(found str
 
 	// Try to handle blocks that elide unchanged code with "...".
 	if result, ok, err := tryDotDotDots(whole, part, replace); err == nil && ok {
+		return result, true
+	}
+
+	// The SEARCH text may start mid-line: accept it if it is unique in the file.
+	if result, ok := replaceUniqueSubstring(whole, part, replace); ok {
 		return result, true
 	}
 
