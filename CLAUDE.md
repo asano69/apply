@@ -19,6 +19,3 @@ import math
 from flask import Flask
 >>>>>>> REPLACE
 ```
-
-
-- cache/は読み取り専用にしてください。変更不要です
