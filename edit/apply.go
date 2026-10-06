@@ -277,13 +277,18 @@ func stripQuotedWrapping(text, path string, fence Fence) string {
 		return text
 	}
 
-	lines := strings.Split(text, "\n")
+	// Drop the final newline first: strings.Split would otherwise return a
+	// trailing empty element (unlike Python's splitlines) and the closing
+	// fence would never be the last line.
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 
 	if path != "" && len(lines) > 0 && strings.HasSuffix(strings.TrimSpace(lines[0]), filepath.Base(path)) {
 		lines = lines[1:]
 	}
 
-	if len(lines) > 0 &&
+	// Require two lines so a lone fence line is not treated as both the
+	// opening and the closing fence.
+	if len(lines) >= 2 &&
 		strings.HasPrefix(lines[0], fence.Open) &&
 		strings.HasPrefix(lines[len(lines)-1], fence.Close) {
 		lines = lines[1 : len(lines)-1]

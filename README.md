@@ -10,7 +10,6 @@ A Go implementation of Aider's SEARCH/REPLACE ("editblock") diff format. It pars
   - `fuzzy.go` — last-resort fuzzy matching and "did you mean" suggestions for failed matches.
   - `types.go` / `errors.go` — shared types and error types (`ParseError`, `PathEscapeError`, `ApplyError`).
 - `cmd/apply/` — CLI entrypoint (`apply`) built on top of `edit`.
-- `cache/` — a vendored copy of the upstream `search-replace-py` Python source, kept as the reference implementation this Go package was ported from.
 
 ## Build & install
 
