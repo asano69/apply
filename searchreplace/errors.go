@@ -27,11 +27,8 @@ func (e *FileExistsError) Error() string {
 	return fmt.Sprintf(
 		"Refusing to create '%s' because it already exists. "+
 			"A new-file block would append to it, so no files were changed. "+
-			"Use a SEARCH/REPLACE block to edit the file instead.\n"+
-			"'%s' は既に存在するため作成しませんでした。"+
-			"新規ファイルのブロックは既存ファイルの末尾に追記されてしまうため、どのファイルも変更していません。"+
-			"既存ファイルを編集する場合は SEARCH/REPLACE ブロックを使ってください。",
-		e.Path, e.Path)
+			"Use a SEARCH/REPLACE block to edit the file instead.",
+		e.Path)
 }
 
 // ApplyError indicates one or more SEARCH/REPLACE blocks failed to match.
