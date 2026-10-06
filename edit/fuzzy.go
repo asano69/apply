@@ -2,7 +2,9 @@ package edit
 
 import (
 	"math"
+	"runtime"
 	"strings"
+	"sync"
 )
 
 // ratio approximates Python's difflib.SequenceMatcher(None, a, b).ratio()
@@ -11,8 +13,9 @@ func ratio(a, b string) float64 {
 	if len(a) == 0 && len(b) == 0 {
 		return 1.0
 	}
-	lcs := lcsLen([]rune(a), []rune(b))
-	return 2.0 * float64(lcs) / float64(len(a)+len(b))
+	ra, rb := []rune(a), []rune(b)
+	lcs := lcsLen(ra, rb)
+	return 2.0 * float64(lcs) / float64(len(ra)+len(rb))
 }
 
 // ratioLines is the line-sequence equivalent of ratio, comparing whole lines
@@ -76,18 +79,39 @@ func replaceClosestEditDistance(wholeLines []string, part string, partLines []st
 	minLen := int(math.Floor(float64(len(partLines)) * (1 - scale)))
 	maxLen := int(math.Ceil(float64(len(partLines)) * (1 + scale)))
 
+	// Enumerate candidates in the original order (length, then start) so the
+	// tie-break below stays deterministic.
+	var windows [][2]int
 	for length := minLen; length < maxLen; length++ {
 		if length <= 0 {
 			continue
 		}
 		for i := 0; i+length <= len(wholeLines); i++ {
-			chunk := strings.Join(wholeLines[i:i+length], "")
-			sim := ratio(chunk, part)
-			if sim > maxSimilarity && sim > 0 {
-				maxSimilarity = sim
-				chunkStart = i
-				chunkEnd = i + length
-			}
+			windows = append(windows, [2]int{i, i + length})
+		}
+	}
+
+	// Score every window concurrently; each goroutine writes only its own slot.
+	scores := make([]float64, len(windows))
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+	var wg sync.WaitGroup
+	for idx, w := range windows {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			scores[idx] = ratio(strings.Join(wholeLines[w[0]:w[1]], ""), part)
+		}()
+	}
+	wg.Wait()
+
+	// Reduce sequentially: the first window with the highest score wins.
+	for idx, sim := range scores {
+		if sim > maxSimilarity && sim > 0 {
+			maxSimilarity = sim
+			chunkStart = windows[idx][0]
+			chunkEnd = windows[idx][1]
 		}
 	}
 
