@@ -82,6 +82,53 @@ func dropPathGap(lines []string) []string {
 	return lines[:end]
 }
 
+// unwrapFencedPaths removes the fence pair around a path line when a new-file
+// fence or a SEARCH block follows it:
+//
+//	```
+//	a.go (new file)
+//	```
+//	```go
+//	package a
+//	```
+//
+// Without this, the second fence would be read as the end of an empty new file.
+func unwrapFencedPaths(lines []string, fence Fence) []string {
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if isFencedPath(lines, i, fence) {
+			out = append(out, lines[i+1])
+			i += 2
+			continue
+		}
+		out = append(out, lines[i])
+	}
+	return out
+}
+
+// isFencedPath reports whether lines[i:i+3] is a bare fence, a path line and a
+// bare fence, followed by a new-file fence or a SEARCH line. A preceding path
+// line means lines[i] opens a new-file body, so nothing is unwrapped then.
+func isFencedPath(lines []string, i int, fence Fence) bool {
+	if i+3 >= len(lines) {
+		return false
+	}
+	if i > 0 && parsePath(lines[i-1]) != "" {
+		return false
+	}
+	if !isBareFence(lines[i], fence) || !isBareFence(lines[i+2], fence) || parsePath(lines[i+1]) == "" {
+		return false
+	}
+	next := classify(lines[i+3], fence)
+	return next == kindFence || next == kindSearch
+}
+
+// isBareFence reports whether line is a fence without a language tag.
+func isBareFence(line string, fence Fence) bool {
+	t := strings.TrimSpace(line)
+	return t == fence.Open || t == tripleBackticks
+}
+
 // classify decides what kind of line this is.
 func classify(line string, fence Fence) lineKind {
 	t := strings.TrimSpace(line)
@@ -132,7 +179,9 @@ type blockParser struct {
 // findOriginalUpdateBlocks scans content for SEARCH/REPLACE blocks and
 // new-file code blocks.
 func findOriginalUpdateBlocks(content string, fence Fence) ([]EditBlock, error) {
-	lines := dropBlankLinesBeforeSearch(splitLinesKeepEnds(content), fence)
+	lines := splitLinesKeepEnds(content)
+	lines = unwrapFencedPaths(lines, fence)
+	lines = dropBlankLinesBeforeSearch(lines, fence)
 	p := &blockParser{lines: lines, fence: fence}
 
 	for p.pos < len(p.lines) {

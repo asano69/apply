@@ -41,6 +41,21 @@ func TestParseEditBlocks_Formats(t *testing.T) {
 			want:  []EditBlock{{Path: "dir/a.go", Original: "", Updated: "package a\n"}},
 		},
 		{
+			name:  "path wrapped in its own fence before a new file body",
+			input: "FENCE\na.go (new file)\nFENCE\nFENCEgo\npackage a\nFENCE\n",
+			want:  []EditBlock{{Path: "a.go", Original: "", Updated: "package a\n"}},
+		},
+		{
+			name:  "path wrapped in its own fence before a SEARCH block",
+			input: "FENCE\na.go\nFENCE\n<SEARCH>\nold\n<DIV>\nnew\n<REPLACE>\n",
+			want:  []EditBlock{{Path: "a.go", Original: "old\n", Updated: "new\n"}},
+		},
+		{
+			name:  "new file body that looks like a path is kept",
+			input: "a.go (new file)\nFENCE\nb.txt\nFENCE\n",
+			want:  []EditBlock{{Path: "a.go", Original: "", Updated: "b.txt\n"}},
+		},
+		{
 			name:  "code block without a path is ignored",
 			input: "Example:\nFENCEgo\nfoo()\nFENCE\n",
 			want:  nil,
